@@ -1,0 +1,105 @@
+function [CandCorr,TmShuffleCorr,CandDis,TmShuffleDis] = shuffle_wc_nonoverlap(D,Index,CandSeq)
+
+%%%%%
+%%%%% Calculate timebin shuffle and weighted correlation
+%%%%% (NOT replay score) for replays with non-overlapping bins.
+%%%%% Same as shuffle_wc_replayscore_nonoverlap but w/o replay score.
+%%%%% Used in decode_spikedensity_events_lapbylap_NonOverLapping.m
+%%%%%
+
+   
+    YY=size(Index,2)-1;
+    
+    %nonoverlapping
+    Z=zeros(size(D,1), max(diff(Index)), YY);
+    for c=1:size(Index,2)-1
+       Z(:,1:(Index(c+1)-Index(c)),c)=D(:,Index(c)+1:Index(c+1)); 
+    end
+  denom=nansum(nansum(Z,1),2); 
+    mxw=nansum(nansum(bsxfun(@times,Z,[1:size(Z,2)]),1),2)./denom; 
+    myw=nansum(nansum(bsxfun(@times,Z,[1:size(Z,1)]'),1),2)./denom; 
+    mxyw=nansum(nansum(bsxfun(@times,Z,[1:size(Z,1)]'*[1:size(Z,2)]),1),2)./denom; 
+    mxxw=nansum(nansum(bsxfun(@times,Z,[1:size(Z,2)].^2),1),2)./denom; 
+    myyw=nansum(nansum(bsxfun(@times,Z,[1:size(Z,1)]'.^2),1),2)./denom;
+    wc=(mxyw-mxw.*myw)./(sqrt(mxxw-mxw.*mxw).*sqrt(myyw-myw.*myw));
+    CandCorr=reshape(wc,size(wc,3),1);
+    
+    
+    %shuffles
+    n_shuffles=5000;    
+    S=size(Z,2);
+    
+    
+    [nanI,I2]=max(Z,[],1);    
+%     I2=sum([1:size(Z,1)]'*ones(1,size(Z,2)).*Z); %ABL changed from max to weighted 6/18
+    A=zeros(S,size(I2,3));
+    A(:,:)=I2(1,:,:);
+    A(isnan(nanI)) = NaN;
+    CandDis = max(abs(diff(A)),[],1);
+    CandDis = CandDis';
+    
+    if 0
+    %examples
+%     for SeqNo = [4 48 68]
+%         x = find(~isnan(II(:,SeqNo)));
+%         y = II(~isnan(II(:,SeqNo)),SeqNo);
+%         [p1,S1] = polyfit(x,y,1);
+%         R2_1 = 1 - (S1.normr/norm(y - mean(y)))^2;
+%         R2_11 = 1-( (1- R2_1)*(length(x)-1)./(length(x)-1-1));
+%         [p,S] = polyfit(x,y,3);
+%         R2_3 = 1 - (S.normr/norm(y - mean(y)))^2;
+%         R2_33 = 1-( (1- R2_3)*(length(x)-1)./(length(x)-3-1));
+%         [SeqNo R2_3-R2_1 R2_3/R2_1 R2_33-R2_11 R2_33/R2_11]    
+%         y1 = polyval(p,x);
+%         figure; hold on; plot(x,y,'k.','MarkerSize',20); 
+%         plot(x,y1,'r')
+%         y1 = polyval(p1,x);
+%         plot(x,y1,'b')
+%         text(1,20,['Radj = ' num2str(round(R2_11,2,'significant'))],'Color','b')
+%         text(1,15,['Radj = ' num2str(round(R2_33,2,'significant'))],'Color','r')
+%         text(1,10,['Diff = ' num2str(round(R2_33-R2_11,2,'significant'))],'Color','k')
+%         yl = get(gca,'ylim');
+%         set(gca,'ylim',[0 yl(2)])
+%     %     p
+%     end
+    end
+    
+    TmShuffleCorr=NaN(size(CandSeq,1),n_shuffles);
+    TmShuffleDis=TmShuffleCorr;
+    for SeqNo=1:size(CandSeq,1)
+        len = Index(SeqNo+1)-Index(SeqNo);
+        [~,RandInd] = sort(rand(n_shuffles,len),2);
+        RandInd = repmat(RandInd,[1 1 size(Z,1)]);
+        RandInd = permute(RandInd,[2 3 1]); 
+        addon = permute(repmat(len*[1:size(Z,1)]-len,[len 1 n_shuffles]),[1 2 3])+permute(repmat([1:n_shuffles]'*(len*size(Z,1))-(len*size(Z,1)),[1 len size(Z,1)]),[2 3 1]);
+        RandInd = RandInd+addon;        
+        Z1 = repmat(Z(:,1:len,SeqNo),[1 1 n_shuffles]);
+        Z1 = permute(Z1,[2 1 3]);
+%         Z2 = cat(3,Z1(RandInd),Z1(:,:,1)); %testing
+        Z2 = Z1(RandInd);
+        Z2= permute(Z2,[2 1 3]);
+        denom=nansum(nansum(Z2,1),2); 
+        mxw=nansum(nansum(bsxfun(@times,Z2,[1:size(Z2,2)]),1),2)./denom; 
+        myw=nansum(nansum(bsxfun(@times,Z2,[1:size(Z2,1)]'),1),2)./denom; 
+        mxyw=nansum(nansum(bsxfun(@times,Z2,[1:size(Z2,1)]'*[1:size(Z2,2)]),1),2)./denom; 
+        mxxw=nansum(nansum(bsxfun(@times,Z2,[1:size(Z2,2)].^2),1),2)./denom; 
+        myyw=nansum(nansum(bsxfun(@times,Z2,[1:size(Z2,1)]'.^2),1),2)./denom;
+        wc=(mxyw-mxw.*myw)./(sqrt(mxxw-mxw.*mxw).*sqrt(myyw-myw.*myw));    
+        TmShuffleCorr(SeqNo,:)=reshape(wc,size(wc,3),1);
+        
+        [nanI,I2]=max(Z2,[],1);  
+        A=zeros(size(Z2,2),size(I2,3));
+        A(:,:)=I2(1,:,:);
+        A(isnan(nanI)) = NaN;        
+        TmShuffleDis(SeqNo,:) = max(abs(diff(A)),[],1);
+        if mod(SeqNo,500)==0
+            disp(['Done with ' num2str(SeqNo) ' of ' num2str(size(CandSeq,1)) ' Events'])
+        end
+    end
+    
+
+    sigst1 = ((sum(((TmShuffleDis))<=CandDis,2)+1)./(size(TmShuffleDis,2)+1))<.05;
+    sigst2 = ((sum(abs(TmShuffleCorr)>=abs(CandCorr),2)+1)./(size(TmShuffleCorr,2)+1))<.05;
+    disp([num2str(sum(sigst1 & sigst2)) ' Replays pass significance: ' num2str(round(100*(sum(sigst1 & sigst2)./size(CandCorr,1)))) '%'])        
+    disp(['Number Replays with abs(wc)>.6 & jd<.4: ' num2str(sum(abs(CandCorr)>.6 & CandDis/size(D,1)<.4))])
+end
